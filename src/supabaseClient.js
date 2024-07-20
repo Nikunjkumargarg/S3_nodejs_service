@@ -1,9 +1,6 @@
-require("dotenv").config();
 const { createClient } = require("@supabase/supabase-js");
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
+const supabaseUrl = "https://rmidphexfjgplgnbkxnx.supabase.co";
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 module.exports = supabase;
