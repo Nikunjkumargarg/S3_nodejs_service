@@ -1,4 +1,83 @@
 const s3Service = require("../services/s3Service");
+const jwt = require("jsonwebtoken");
+const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
+const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET;
+console.log("access", ACCESS_TOKEN_SECRET);
+async function register(req, res) {
+  const { username, password } = req.body;
+  try {
+    const existingUser = await s3Service.getUserByUsername(username);
+
+    if (existingUser) {
+      return res.status(400).send("User already exists");
+    }
+
+    await s3Service.createUser(username, password);
+    res.send("User registered");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Error registering user");
+  }
+}
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+
+  if (!token) return res.sendStatus(401); // Unauthorized
+
+  jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403); // Forbidden
+
+    req.user = user;
+    next();
+  });
+}
+
+async function login(req, res) {
+  const { username, password } = req.body;
+  try {
+    const user = await s3Service.validateUser(username, password);
+    console.log(user);
+    // Generate JWT
+    const accessToken = jwt.sign(
+      { username: user.username },
+      ACCESS_TOKEN_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    const refreshToken = jwt.sign(
+      { username: user.username },
+      REFRESH_TOKEN_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({ accessToken, refreshToken });
+  } catch (error) {
+    console.error(error);
+    res.status(401).send("Invalid username or password");
+  }
+}
+
+// Refresh token
+async function refreshToken(req, res) {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.sendStatus(403); // Forbidden
+  }
+
+  jwt.verify(refreshToken, REFRESH_TOKEN_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403); // Forbidden
+
+    const accessToken = jwt.sign(
+      { username: user.username },
+      ACCESS_TOKEN_SECRET,
+      { expiresIn: "15m" }
+    );
+    res.json({ accessToken });
+  });
+}
 
 // Controller to create a bucket
 const createBucket = async (req, res) => {
@@ -129,4 +208,8 @@ module.exports = {
   deleteFile,
   listFiles,
   createBucket,
+  register,
+  login,
+  refreshToken,
+  authenticateToken,
 };

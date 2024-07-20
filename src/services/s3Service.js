@@ -1,9 +1,41 @@
 const fs = require("fs");
 const path = require("path");
 const supabase = require("../supabaseClient");
-
+const bcrypt = require("bcrypt");
 // Define the directory to store uploaded files
 const UPLOAD_DIR = path.join(__dirname, "../data");
+
+async function getUserByUsername(username) {
+  const { data, error } = await supabase
+    .from("Users")
+    .select("*")
+    .eq("username", username);
+
+  if (error) {
+    throw error;
+  }
+
+  if (data.length === 0) {
+    return null; // Or handle as appropriate
+  }
+
+  if (data.length > 1) {
+    throw new Error("Multiple rows returned"); // Handle as appropriate
+  }
+
+  return data[0]; // Return the single row
+}
+
+async function createUser(username, password) {
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const { data, error } = await supabase
+    .from("Users")
+    .insert([{ username, password: hashedPassword }]);
+  if (error) {
+    throw error;
+  }
+  return data;
+}
 
 // Ensure the directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -15,6 +47,22 @@ if (!fs.existsSync(UPLOAD_DIR)) {
       "Unable to create upload directory. Please check permissions and path."
     );
   }
+}
+
+async function validateUser(username, password) {
+  const user = await getUserByUsername(username);
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+
+  if (!isPasswordValid) {
+    throw new Error("Invalid password");
+  }
+
+  return user;
 }
 
 // Function to check if a bucket exists
@@ -217,4 +265,7 @@ module.exports = {
   deleteFile,
   listFiles,
   createBucket,
+  getUserByUsername,
+  createUser,
+  validateUser,
 };

@@ -6,25 +6,41 @@ const upload = multer({ storage: storage });
 const s3Controller = require("../controllers/s3Controller");
 
 // Route to create a bucket
-router.post("/buckets", s3Controller.createBucket);
-
+router.post(
+  "/buckets",
+  s3Controller.authenticateToken,
+  s3Controller.createBucket
+);
+router.post("/register", s3Controller.register);
+router.post("/login", s3Controller.login);
+router.post("/refreshtoken", s3Controller.refreshToken);
 // Route to upload a file to a specified bucket
 router.post(
   "/buckets/:bucketName/objects/:fileName?",
+  s3Controller.authenticateToken,
   upload.single("file"),
   s3Controller.uploadFile
 );
 
 // Route to get a file from a specified bucket
-router.get("/buckets/:bucketName/objects/:fileName", s3Controller.getFile);
+router.get(
+  "/buckets/:bucketName/objects/:fileName",
+  s3Controller.authenticateToken,
+  s3Controller.getFile
+);
 
 // Route to delete a file from a specified bucket
 router.delete(
   "/buckets/:bucketName/objects/:fileName",
+  s3Controller.authenticateToken,
   s3Controller.deleteFile
 );
 
 // Route to list files in a specified bucket
-router.get("/buckets/:bucketName/objects", s3Controller.listFiles);
+router.get(
+  "/buckets/:bucketName/objects",
+  s3Controller.authenticateToken,
+  s3Controller.listFiles
+);
 
 module.exports = router;
