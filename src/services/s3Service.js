@@ -10,7 +10,6 @@ async function getUserByUsername(username) {
     .from("Users")
     .select("*")
     .eq("username", username);
-
   if (error) {
     throw error;
   }
@@ -66,13 +65,15 @@ async function validateUser(username, password) {
 }
 
 // Function to check if a bucket exists
-async function bucketExists(bucketName) {
+async function bucketExists(userId, bucketName) {
   try {
-    const { data, error, count } = await supabase
+    console.log(userId, bucketName);
+    const { data, error } = await supabase
       .from("Buckets")
-      .select("name", { count: "exact" })
+      .select("id")
       .eq("name", bucketName)
-      .maybeSingle(); // Use maybeSingle to avoid errors for no rows
+      .eq("userid", userId)
+      .maybeSingle();
 
     if (error) {
       console.error("Error checking bucket existence:", error.message);
@@ -80,7 +81,10 @@ async function bucketExists(bucketName) {
     }
 
     // Check if any row exists
-    return data !== null;
+    return {
+      exists: data !== null,
+      bucketId: data ? data.id : null,
+    };
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
     throw new Error("Supabase operation failed");
@@ -88,17 +92,22 @@ async function bucketExists(bucketName) {
 }
 
 // Function to create a new bucket
-const createBucket = async (bucketName) => {
+const createBucket = async (userId, bucketName) => {
   try {
+    console.log("service", userId, bucketName);
+
     // Check if bucket already exists
-    const exists = await bucketExists(bucketName);
-    if (exists) {
-      throw new Error("Bucket already exists.");
+    const response = await bucketExists(userId, bucketName);
+
+    if (response.exists) {
+      // Return a specific response if the bucket already exists
+      return { success: false, message: "Bucket already exists." };
     }
 
+    // Proceed to create the new bucket
     const { data, error } = await supabase
       .from("Buckets")
-      .insert([{ name: bucketName }]);
+      .insert([{ name: bucketName, userid: userId }]);
 
     if (error) {
       console.error("Error creating bucket:", error.message);
@@ -106,12 +115,12 @@ const createBucket = async (bucketName) => {
     }
 
     // Create the directory for the bucket if it doesn't exist
-    const bucketDir = path.join(UPLOAD_DIR, bucketName);
+    const bucketDir = path.join(UPLOAD_DIR, userId, bucketName);
     if (!fs.existsSync(bucketDir)) {
       fs.mkdirSync(bucketDir, { recursive: true });
     }
 
-    return data;
+    return { success: true, data };
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
     throw new Error("Supabase operation failed");
@@ -119,14 +128,16 @@ const createBucket = async (bucketName) => {
 };
 
 // Function to upload a file to the filesystem
-const uploadFile = async (bucketName, fileName, fileBuffer) => {
+const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
   // Check if the bucket exists
-  const exists = await bucketExists(bucketName);
-  if (!exists) {
+  console.log(userId, bucketName);
+  const response = await bucketExists(userId, bucketName);
+  console.log("asdfasdf", response);
+  if (!response.exists) {
     throw new Error(`Bucket '${bucketName}' does not exist.`);
   }
 
-  const bucketDir = path.join(UPLOAD_DIR, bucketName);
+  const bucketDir = path.join(UPLOAD_DIR, userId, bucketName);
 
   try {
     if (!fs.existsSync(bucketDir)) {
@@ -150,9 +161,14 @@ const uploadFile = async (bucketName, fileName, fileBuffer) => {
   const fileSize = Buffer.byteLength(fileBuffer);
 
   try {
-    const { data, error } = await supabase
-      .from("Files")
-      .insert([{ name: fileName, url: filePath, bucketName, size: fileSize }]);
+    const { data, error } = await supabase.from("Files").upsert([
+      {
+        name: fileName,
+        url: filePath,
+        bucketName: response.bucketId,
+        size: fileSize,
+      },
+    ]);
 
     if (error) {
       console.error(
@@ -168,9 +184,17 @@ const uploadFile = async (bucketName, fileName, fileBuffer) => {
     throw new Error("Supabase operation failed");
   }
 };
-// Function to get a file from the filesystem
-const getFile = async (bucketName, fileName) => {
-  const filePath = path.join(UPLOAD_DIR, bucketName, fileName);
+
+const getFile = async (bucketName, fileName, userId) => {
+  // Check if the bucket exists against this user
+  const { exists } = await bucketExists(userId, bucketName);
+  if (!exists) {
+    throw new Error(
+      `Bucket '${bucketName}' not found or does not belong to the user.`
+    );
+  }
+
+  const filePath = path.join(UPLOAD_DIR, userId, bucketName, fileName);
 
   // Ensure the file exists
   if (!fs.existsSync(filePath)) {
@@ -189,18 +213,26 @@ const getFile = async (bucketName, fileName) => {
 };
 
 // Function to delete a file from the filesystem
-const deleteFile = async (bucketName, fileName) => {
-  const filePath = path.join(UPLOAD_DIR, bucketName, fileName);
+const deleteFile = async (bucketName, fileName, userId) => {
+  const { exists, bucketId } = await bucketExists(userId, bucketName);
+  if (!exists) {
+    throw new Error(
+      `Bucket '${bucketName}' not found or does not belong to the user.`
+    );
+  }
+  const filePath = path.join(UPLOAD_DIR, userId, bucketName, fileName);
 
   // Ensure the file exists before attempting to delete it
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
+      return { success: true };
     } else {
-      console.error("File not found for deletion:", filePath);
-      throw new Error(
-        `File '${fileName}' not found in bucket '${bucketName}' for deletion.`
-      );
+      // Return a specific message if the file does not exist
+      return {
+        success: false,
+        message: `File '${fileName}' not found in bucket '${bucketName}' for deletion.`,
+      };
     }
   } catch (err) {
     console.error("Failed to delete file from filesystem:", err.message);
@@ -208,14 +240,13 @@ const deleteFile = async (bucketName, fileName) => {
       `Unable to delete file '${fileName}' from directory '${filePath}'.`
     );
   }
-
   // Delete the file metadata from the Supabase database
   try {
     const { error } = await supabase
       .from("Files")
       .delete()
       .eq("name", fileName)
-      .eq("bucketName", bucketName);
+      .eq("bucketName", bucketId);
 
     if (error) {
       console.error(
@@ -235,13 +266,19 @@ const deleteFile = async (bucketName, fileName) => {
 };
 
 // Function to list files in a bucket
-const listFiles = async (bucketName) => {
+const listFiles = async (bucketName, userId) => {
   try {
+    const { exists, bucketId } = await bucketExists(userId, bucketName);
+    if (!exists) {
+      throw new Error(
+        `Bucket '${bucketName}' not found or does not belong to the user.`
+      );
+    }
     // List files from the Supabase database
     const { data, error } = await supabase
       .from("Files")
       .select("*")
-      .eq("bucketName", bucketName);
+      .eq("bucketName", bucketId);
 
     if (error) {
       console.error("Supabase error while listing files:", error.message);
