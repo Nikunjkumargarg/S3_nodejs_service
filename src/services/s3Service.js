@@ -3,8 +3,11 @@ const path = require("path");
 const supabase = require("../supabaseClient");
 const bcrypt = require("bcrypt");
 // Define the directory to store uploaded files
-const UPLOAD_DIR = path.join(__dirname, "../data");
+//const UPLOAD_DIR = path.join(__dirname, "../data");
 
+// Define directory paths for public and private data
+const PUBLIC_DATA_DIR = path.join(__dirname, "../data/public_data");
+const PRIVATE_DATA_DIR = path.join(__dirname, "../data/private_data");
 async function getUserByUsername(username) {
   const { data, error } = await supabase
     .from("Users")
@@ -37,16 +40,16 @@ async function createUser(username, password) {
 }
 
 // Ensure the directory exists
-if (!fs.existsSync(UPLOAD_DIR)) {
-  try {
-    fs.mkdirSync(UPLOAD_DIR);
-  } catch (err) {
-    console.error("Failed to create upload directory:", err);
-    throw new Error(
-      "Unable to create upload directory. Please check permissions and path."
-    );
+const ensureDirectoryExists = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    try {
+      fs.mkdirSync(dirPath, { recursive: true });
+    } catch (err) {
+      console.error("Failed to create directory:", err);
+      throw new Error(`Unable to create directory at path: ${dirPath}. Please check permissions and path.`);
+    }
   }
-}
+};
 
 async function validateUser(username, password) {
   const user = await getUserByUsername(username);
@@ -68,11 +71,12 @@ async function validateUser(username, password) {
 async function bucketExists(userId, bucketName) {
   try {
     console.log(userId, bucketName);
+
+    // First, check if the bucket exists and get its details
     const { data, error } = await supabase
       .from("Buckets")
-      .select("id")
+      .select("id, is_private, userid")
       .eq("name", bucketName)
-      .eq("userid", userId)
       .maybeSingle();
 
     if (error) {
@@ -80,10 +84,20 @@ async function bucketExists(userId, bucketName) {
       throw new Error("Unable to check bucket existence");
     }
 
-    // Check if any row exists
+    if (!data) {
+      return { exists: false, bucketId: null, isPrivate: false };
+    }
+
+    // Check if the bucket is private and if the user is authorized
+    if (data.is_private && data.userid !== userId) {
+      return { exists: false, bucketId: null, isPrivate: true };
+    }
+
+    // Bucket exists and is accessible
     return {
-      exists: data !== null,
-      bucketId: data ? data.id : null,
+      exists: true,
+      bucketId: data.id,
+      isPrivate: data.is_private,
     };
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
@@ -91,8 +105,8 @@ async function bucketExists(userId, bucketName) {
   }
 }
 
-// Function to create a new bucket
-const createBucket = async (userId, bucketName) => {
+
+const createBucket = async (userId, bucketName, isPrivate = true) => {
   try {
     console.log("service", userId, bucketName);
 
@@ -100,22 +114,28 @@ const createBucket = async (userId, bucketName) => {
     const response = await bucketExists(userId, bucketName);
 
     if (response.exists) {
-      // Return a specific response if the bucket already exists
       return { success: false, message: "Bucket already exists." };
     }
 
     // Proceed to create the new bucket
     const { data, error } = await supabase
       .from("Buckets")
-      .insert([{ name: bucketName, userid: userId }]);
+      .insert([{ name: bucketName, userid: userId, is_private: isPrivate }]);
 
     if (error) {
       console.error("Error creating bucket:", error.message);
       throw new Error("Unable to create bucket");
     }
 
-    // Create the directory for the bucket if it doesn't exist
-    const bucketDir = path.join(UPLOAD_DIR, userId, bucketName);
+    // Ensure the main directories exist
+    ensureDirectoryExists(PUBLIC_DATA_DIR);
+    ensureDirectoryExists(PRIVATE_DATA_DIR);
+
+    // Determine the directory based on privacy setting
+    // const baseDir = isPrivate ? PRIVATE_DATA_DIR : PUBLIC_DATA_DIR;
+    // const bucketDir = path.join(baseDir, userId, bucketName);
+    const bucketDir = isPrivate ? path.join(__dirname,'../data','private_data', userId, bucketName) : path.join(__dirname, '../data', 'public_data', bucketName);
+
     if (!fs.existsSync(bucketDir)) {
       fs.mkdirSync(bucketDir, { recursive: true });
     }
@@ -127,17 +147,67 @@ const createBucket = async (userId, bucketName) => {
   }
 };
 
-// Function to upload a file to the filesystem
+//Get buckets
+// Function to get all buckets for a user
+const getAllBucketsForUser = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from("Buckets")
+      .select("*")
+      .eq("userid", userId);
+
+    if (error) {
+      console.error("Error fetching buckets:", error.message);
+      throw new Error("Unable to fetch buckets");
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Error during Supabase operation:", err.message);
+    throw new Error("Supabase operation failed");
+  }
+};
+
+//get a specific bucket
+const getBucketByName = async (userId, bucketName) => {
+  try {
+    const { data, error } = await supabase
+      .from("Buckets")
+      .select("*")
+      .eq("userid", userId)
+      .eq("name", bucketName)
+      .single();
+
+    if (error) {
+      console.error("Error fetching bucket:", error.message);
+      throw new Error("Unable to fetch bucket");
+    }
+
+    if (!data) {
+      throw new Error("Bucket not found");
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Error during Supabase operation:", err.message);
+    throw new Error("Supabase operation failed");
+  }
+};
+
 const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
   // Check if the bucket exists
   console.log(userId, bucketName);
   const response = await bucketExists(userId, bucketName);
-  console.log("asdfasdf", response);
+  console.log("Bucket check response:", response);
+
   if (!response.exists) {
     throw new Error(`Bucket '${bucketName}' does not exist.`);
   }
 
-  const bucketDir = path.join(UPLOAD_DIR, userId, bucketName);
+  // Determine the correct directory based on privacy
+  // const directory = response.isPrivate ? "private_data" : "public_data";
+  // const bucketDir = path.join(__dirname,'../data',directory, userId, bucketName);
+  const bucketDir = response.isPrivate ? path.join(__dirname,'../data','private_data', userId, bucketName) : path.join(__dirname, '../data', 'public_data', bucketName);
 
   try {
     if (!fs.existsSync(bucketDir)) {
@@ -164,17 +234,14 @@ const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
     const { data, error } = await supabase.from("Files").upsert([
       {
         name: fileName,
-        url: filePath,
+        url: filePath, // Ensure this URL is properly handled
         bucketName: response.bucketId,
         size: fileSize,
       },
     ]);
 
     if (error) {
-      console.error(
-        "Error inserting file metadata into Supabase:",
-        error.message
-      );
+      console.error("Error inserting file metadata into Supabase:", error.message);
       throw new Error("Unable to insert file metadata");
     }
 
@@ -186,15 +253,21 @@ const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
 };
 
 const getFile = async (bucketName, fileName, userId) => {
-  // Check if the bucket exists against this user
-  const { exists } = await bucketExists(userId, bucketName);
+  console.log('hello');
+  // Check if the bucket exists and get its privacy setting
+  console.log(bucketName,fileName,userId);
+  const { exists, isPrivate } = await bucketExists(userId, bucketName);
   if (!exists) {
-    throw new Error(
-      `Bucket '${bucketName}' not found or does not belong to the user.`
-    );
+    throw new Error(`Bucket '${bucketName}' not found or does not belong to the user.`);
   }
 
-  const filePath = path.join(UPLOAD_DIR, userId, bucketName, fileName);
+  // Verify if the bucket is private and if the user is authorized
+  if (isPrivate && !isAuthorized(userId)) {
+    throw new Error("Access denied to private bucket.");
+  }
+
+  const directory = isPrivate ? path.join(__dirname,'../data', 'private_data', userId, bucketName) : path.join(__dirname, '../data', 'public_data', bucketName);
+  const filePath = path.join(directory,fileName);
 
   // Ensure the file exists
   if (!fs.existsSync(filePath)) {
@@ -206,21 +279,51 @@ const getFile = async (bucketName, fileName, userId) => {
     return fs.createReadStream(filePath);
   } catch (err) {
     console.error("Failed to read file from filesystem:", err.message);
-    throw new Error(
-      `Unable to read file '${fileName}' from directory '${filePath}'.`
-    );
+    throw new Error(`Unable to read file '${fileName}' from directory '${filePath}'.`);
   }
 };
 
-// Function to delete a file from the filesystem
-const deleteFile = async (bucketName, fileName, userId) => {
-  const { exists, bucketId } = await bucketExists(userId, bucketName);
-  if (!exists) {
-    throw new Error(
-      `Bucket '${bucketName}' not found or does not belong to the user.`
-    );
+const isAuthorized = async (userId, bucketName) => {
+  try {
+    // Fetch bucket details to check ownership
+    const { data, error } = await supabase
+      .from("Buckets")
+      .select("userid")
+      .eq("name", bucketName)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching bucket details:", error.message);
+      throw new Error("Failed to check bucket ownership.");
+    }
+
+    if (!data) {
+      throw new Error(`Bucket '${bucketName}' not found.`);
+    }
+
+    // Check if the userId matches the bucket ownerId
+    return data.userid === userId;
+  } catch (err) {
+    console.error("Error during Supabase operation:", err.message);
+    throw new Error("Authorization check failed.");
   }
-  const filePath = path.join(UPLOAD_DIR, userId, bucketName, fileName);
+};
+
+
+
+const deleteFile = async (bucketName, fileName, userId) => {
+  const { exists, bucketId, isPrivate } = await bucketExists(userId, bucketName);
+  if (!exists) {
+    throw new Error(`Bucket '${bucketName}' not found or does not belong to the user.`);
+  }
+
+  // Check authorization for private buckets
+  if (isPrivate && !isAuthorized(userId)) {
+    throw new Error("Access denied to private bucket.");
+  }
+
+  const directory = isPrivate ? "private_data" : "public_data";
+  const filePath = path.join(directory, userId, bucketName, fileName);
 
   // Ensure the file exists before attempting to delete it
   try {
@@ -228,7 +331,6 @@ const deleteFile = async (bucketName, fileName, userId) => {
       fs.unlinkSync(filePath);
       return { success: true };
     } else {
-      // Return a specific message if the file does not exist
       return {
         success: false,
         message: `File '${fileName}' not found in bucket '${bucketName}' for deletion.`,
@@ -236,10 +338,9 @@ const deleteFile = async (bucketName, fileName, userId) => {
     }
   } catch (err) {
     console.error("Failed to delete file from filesystem:", err.message);
-    throw new Error(
-      `Unable to delete file '${fileName}' from directory '${filePath}'.`
-    );
+    throw new Error(`Unable to delete file '${fileName}' from directory '${filePath}'.`);
   }
+
   // Delete the file metadata from the Supabase database
   try {
     const { error } = await supabase
@@ -249,31 +350,29 @@ const deleteFile = async (bucketName, fileName, userId) => {
       .eq("bucketName", bucketId);
 
     if (error) {
-      console.error(
-        "Supabase error while deleting file metadata:",
-        error.message
-      );
-      throw new Error(
-        `Failed to delete metadata for file '${fileName}' from Supabase: ${error.message}`
-      );
+      console.error("Supabase error while deleting file metadata:", error.message);
+      throw new Error(`Failed to delete metadata for file '${fileName}' from Supabase: ${error.message}`);
     }
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
-    throw new Error(
-      "Supabase operation failed. Check your Supabase configuration and schema."
-    );
+    throw new Error("Supabase operation failed. Check your Supabase configuration and schema.");
   }
 };
+
 
 // Function to list files in a bucket
 const listFiles = async (bucketName, userId) => {
   try {
-    const { exists, bucketId } = await bucketExists(userId, bucketName);
+    const { exists, bucketId, isPrivate } = await bucketExists(userId, bucketName);
     if (!exists) {
-      throw new Error(
-        `Bucket '${bucketName}' not found or does not belong to the user.`
-      );
+      throw new Error(`Bucket '${bucketName}' not found or does not belong to the user.`);
     }
+
+    // Check if the user is authorized to view files in a private bucket
+    if (isPrivate && !isAuthorized(userId)) {
+      throw new Error("Access denied to private bucket.");
+    }
+
     // List files from the Supabase database
     const { data, error } = await supabase
       .from("Files")
@@ -282,17 +381,71 @@ const listFiles = async (bucketName, userId) => {
 
     if (error) {
       console.error("Supabase error while listing files:", error.message);
-      throw new Error(
-        `Failed to list files for bucket '${bucketName}': ${error.message}`
-      );
+      throw new Error(`Failed to list files for bucket '${bucketName}': ${error.message}`);
     }
 
     return data;
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
-    throw new Error(
-      "Supabase operation failed. Check your Supabase configuration and schema."
-    );
+    throw new Error("Supabase operation failed. Check your Supabase configuration and schema.");
+  }
+};
+
+//update bucket privacy
+const updateBucketPrivacy = async (bucketName, userId, newPrivacy) => {
+  try {
+    const { data, error } = await supabase
+      .from("Buckets")
+      .update({ is_private: newPrivacy })
+      .eq("name", bucketName)
+      .eq("userid", userId);
+
+    if (error) {
+      console.error("Error updating bucket privacy:", error.message);
+      throw new Error("Unable to update bucket privacy");
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Error during Supabase operation:", err.message);
+    throw new Error("Supabase operation failed");
+  }
+};
+
+const moveFiles = (bucketName, userId, isPrivate) => {
+  const oldBaseDir = isPrivate ? path.join(PUBLIC_DATA_DIR, bucketName) : path.join(PRIVATE_DATA_DIR, userId, bucketName);
+  const newBaseDir = isPrivate ? path.join(PRIVATE_DATA_DIR, userId, bucketName) : path.join(PUBLIC_DATA_DIR, bucketName);
+
+  if (!fs.existsSync(oldBaseDir)) {
+    console.error("Old directory not found:", oldBaseDir);
+    throw new Error("Old directory does not exist");
+  }
+
+  if (!fs.existsSync(newBaseDir)) {
+    fs.mkdirSync(newBaseDir, { recursive: true });
+  }
+
+  // Move files from old directory to new directory
+  fs.readdirSync(oldBaseDir).forEach(file => {
+    const oldFilePath = path.join(oldBaseDir, file);
+    const newFilePath = path.join(newBaseDir, file);
+
+    fs.renameSync(oldFilePath, newFilePath);
+  });
+
+  // Remove old directory
+  fs.rmdirSync(oldBaseDir);
+};
+
+const changeBucketPrivacy = async (bucketName, userId, newPrivacy) => {
+  try {
+    await updateBucketPrivacy(bucketName, userId, newPrivacy);
+    moveFiles(bucketName, userId, newPrivacy);
+
+    console.log(`Bucket '${bucketName}' privacy updated successfully.`);
+  } catch (err) {
+    console.error("Error changing bucket privacy:", err.message);
+    throw new Error("Failed to change bucket privacy");
   }
 };
 
@@ -305,4 +458,9 @@ module.exports = {
   getUserByUsername,
   createUser,
   validateUser,
+  getAllBucketsForUser,
+  getBucketByName,
+  changeBucketPrivacy,
+  updateBucketPrivacy,
+  moveFiles
 };

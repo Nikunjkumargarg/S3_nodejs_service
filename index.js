@@ -12,7 +12,10 @@ app.use(express.json()); // For parsing application/json
 app.use(express.urlencoded({ extended: true })); // For parsing application/x-www-form-urlencoded
 
 // Serve static files (e.g., for front-end assets)
-app.use("/static", express.static(path.join(__dirname, "public")));
+app.use(
+  "/files",
+  express.static(path.join(__dirname, "src", "data", "public_data"))
+);
 
 // Use the s3 routes
 app.use("/api", s3Routes);

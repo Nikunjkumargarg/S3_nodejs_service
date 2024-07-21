@@ -1,6 +1,7 @@
 const { use } = require("../routes/s3Routes");
 const s3Service = require("../services/s3Service");
 const jwt = require("jsonwebtoken");
+
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET;
 async function register(req, res) {
@@ -55,7 +56,7 @@ async function login(req, res) {
     res.json({ accessToken, refreshToken });
   } catch (error) {
     console.error(error);
-    res.status(401).send("Invalid username or password");
+    res.status(401).send({ error: "Invalid username or password" });
   }
 }
 
@@ -83,7 +84,7 @@ async function refreshToken(req, res) {
 const createBucket = async (req, res) => {
   try {
     const userId = req.user.userid;
-    const { bucketName } = req.body;
+    const { bucketName, isPrivate } = req.body;
     console.log("controller", userId, bucketName);
     // Validate bucketName
     if (!bucketName) {
@@ -91,7 +92,7 @@ const createBucket = async (req, res) => {
     }
 
     // Create the bucket
-    const result = await s3Service.createBucket(userId, bucketName);
+    const result = await s3Service.createBucket(userId, bucketName, isPrivate);
     if (!result.success) {
       return res.status(400).json({ message: result.message });
     }
@@ -102,6 +103,32 @@ const createBucket = async (req, res) => {
       error: "Failed to create bucket",
       message: error.message,
     });
+  }
+};
+
+//Controller to get all Buckets
+const getAllBucketsForUserController = async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    const buckets = await s3Service.getAllBucketsForUser(userId);
+    res.json(buckets);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+//Controller to get bucket by name
+// Controller to handle the request to get a specific bucket by name
+const getBucketByNameController = async (req, res) => {
+  const userId = req.params.userId;
+  const bucketName = req.params.bucketName;
+
+  try {
+    const bucket = await s3Service.getBucketByName(userId, bucketName);
+    res.json(bucket);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -218,6 +245,22 @@ const listFiles = async (req, res) => {
   }
 };
 
+// Route to change bucket privacy
+async function changeBucketPrivacy(req, res) {
+  const { bucketName, newPrivacy } = req.body;
+  const userId = req.user.userid;
+
+  try {
+    await s3Service.changeBucketPrivacy(bucketName, userId, newPrivacy);
+    res.status(200).json({
+      success: true,
+      message: `Bucket '${bucketName}' privacy updated successfully.`,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   uploadFile,
   getFile,
@@ -228,4 +271,7 @@ module.exports = {
   login,
   refreshToken,
   authenticateToken,
+  getAllBucketsForUserController,
+  getBucketByNameController,
+  changeBucketPrivacy,
 };
