@@ -198,6 +198,7 @@ const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
   // Check if the bucket exists
   console.log(userId, bucketName);
   const response = await bucketExists(userId, bucketName);
+  console.log(response);
   console.log("Bucket check response:", response);
 
   if (!response.exists) {
@@ -207,7 +208,9 @@ const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
   // Determine the correct directory based on privacy
   // const directory = response.isPrivate ? "private_data" : "public_data";
   // const bucketDir = path.join(__dirname,'../data',directory, userId, bucketName);
-  const bucketDir = response.isPrivate ? path.join(__dirname,'../data','private_data', userId, bucketName) : path.join(__dirname, '../data', 'public_data', bucketName);
+  const bucketDir = response.isPrivate
+    ? path.join(__dirname, "../data", "private_data", userId, bucketName)
+    : path.join(__dirname, "../data", "public_data", bucketName);
 
   try {
     if (!fs.existsSync(bucketDir)) {
@@ -229,19 +232,28 @@ const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
 
   // Get file size
   const fileSize = Buffer.byteLength(fileBuffer);
+  const fileUrl = response.isPrivate
+    ? filePath // For private files, you can choose not to expose a URL or generate a temporary URL
+    : `http://localhost:8000/public/${bucketName}/${fileName}`; // Construct public URL
 
   try {
-    const { data, error } = await supabase.from("Files").upsert([
-      {
-        name: fileName,
-        url: filePath, // Ensure this URL is properly handled
-        bucketName: response.bucketId,
-        size: fileSize,
-      },
-    ]);
+    const { data, error } = await supabase.from("Files").upsert(
+      [
+        {
+          name: fileName, // File name
+          url: fileUrl, // URL to be updated or inserted
+          bucketName: response.bucketId, // Bucket ID
+          size: fileSize, // File size
+        },
+      ],
+      { onConflict: ["name"] }
+    ); // Composite unique constraint
 
     if (error) {
-      console.error("Error inserting file metadata into Supabase:", error.message);
+      console.error(
+        "Error inserting file metadata into Supabase:",
+        error.message
+      );
       throw new Error("Unable to insert file metadata");
     }
 
@@ -253,12 +265,14 @@ const uploadFile = async (bucketName, fileName, userId, fileBuffer) => {
 };
 
 const getFile = async (bucketName, fileName, userId) => {
-  console.log('hello');
+  console.log("hello");
   // Check if the bucket exists and get its privacy setting
-  console.log(bucketName,fileName,userId);
+  console.log(bucketName, fileName, userId);
   const { exists, isPrivate } = await bucketExists(userId, bucketName);
   if (!exists) {
-    throw new Error(`Bucket '${bucketName}' not found or does not belong to the user.`);
+    throw new Error(
+      `Bucket '${bucketName}' not found or does not belong to the user.`
+    );
   }
 
   // Verify if the bucket is private and if the user is authorized
@@ -266,8 +280,10 @@ const getFile = async (bucketName, fileName, userId) => {
     throw new Error("Access denied to private bucket.");
   }
 
-  const directory = isPrivate ? path.join(__dirname,'../data', 'private_data', userId, bucketName) : path.join(__dirname, '../data', 'public_data', bucketName);
-  const filePath = path.join(directory,fileName);
+  const directory = isPrivate
+    ? path.join(__dirname, "../data", "private_data", userId, bucketName)
+    : path.join(__dirname, "../data", "public_data", bucketName);
+  const filePath = path.join(directory, fileName);
 
   // Ensure the file exists
   if (!fs.existsSync(filePath)) {
@@ -279,7 +295,9 @@ const getFile = async (bucketName, fileName, userId) => {
     return fs.createReadStream(filePath);
   } catch (err) {
     console.error("Failed to read file from filesystem:", err.message);
-    throw new Error(`Unable to read file '${fileName}' from directory '${filePath}'.`);
+    throw new Error(
+      `Unable to read file '${fileName}' from directory '${filePath}'.`
+    );
   }
 };
 
@@ -309,12 +327,16 @@ const isAuthorized = async (userId, bucketName) => {
   }
 };
 
-
-
 const deleteFile = async (bucketName, fileName, userId) => {
-  const { exists, bucketId, isPrivate } = await bucketExists(userId, bucketName);
+  // Check if the bucket exists
+  const { exists, bucketId, isPrivate } = await bucketExists(
+    userId,
+    bucketName
+  );
   if (!exists) {
-    throw new Error(`Bucket '${bucketName}' not found or does not belong to the user.`);
+    throw new Error(
+      `Bucket '${bucketName}' not found or does not belong to the user.`
+    );
   }
 
   // Check authorization for private buckets
@@ -322,14 +344,16 @@ const deleteFile = async (bucketName, fileName, userId) => {
     throw new Error("Access denied to private bucket.");
   }
 
-  const directory = isPrivate ? "private_data" : "public_data";
-  const filePath = path.join(directory, userId, bucketName, fileName);
-
+  // Define the base directory for file storage
+  const baseDir = path.join(__dirname, "../data");
+  const filePath = isPrivate
+    ? path.join(baseDir, "private_data", userId, bucketName, fileName)
+    : path.join(baseDir, "public_data", bucketName, fileName);
+  console.log("adsfasfd", filePath);
   // Ensure the file exists before attempting to delete it
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      return { success: true };
     } else {
       return {
         success: false,
@@ -338,10 +362,12 @@ const deleteFile = async (bucketName, fileName, userId) => {
     }
   } catch (err) {
     console.error("Failed to delete file from filesystem:", err.message);
-    throw new Error(`Unable to delete file '${fileName}' from directory '${filePath}'.`);
+    throw new Error(
+      `Unable to delete file '${fileName}' from directory '${filePath}'.`
+    );
   }
 
-  // Delete the file metadata from the Supabase database
+  // Delete the file metadata from Supabase
   try {
     const { error } = await supabase
       .from("Files")
@@ -350,22 +376,36 @@ const deleteFile = async (bucketName, fileName, userId) => {
       .eq("bucketName", bucketId);
 
     if (error) {
-      console.error("Supabase error while deleting file metadata:", error.message);
-      throw new Error(`Failed to delete metadata for file '${fileName}' from Supabase: ${error.message}`);
+      console.error(
+        "Supabase error while deleting file metadata:",
+        error.message
+      );
+      throw new Error(
+        `Failed to delete metadata for file '${fileName}' from Supabase: ${error.message}`
+      );
     }
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
-    throw new Error("Supabase operation failed. Check your Supabase configuration and schema.");
+    throw new Error(
+      "Supabase operation failed. Check your Supabase configuration and schema."
+    );
   }
-};
 
+  return { success: true };
+};
 
 // Function to list files in a bucket
 const listFiles = async (bucketName, userId) => {
   try {
-    const { exists, bucketId, isPrivate } = await bucketExists(userId, bucketName);
+    const { exists, bucketId, isPrivate } = await bucketExists(
+      userId,
+      bucketName
+    );
+    console.log(exists, bucketId, isPrivate);
     if (!exists) {
-      throw new Error(`Bucket '${bucketName}' not found or does not belong to the user.`);
+      throw new Error(
+        `Bucket '${bucketName}' not found or does not belong to the user.`
+      );
     }
 
     // Check if the user is authorized to view files in a private bucket
@@ -381,13 +421,17 @@ const listFiles = async (bucketName, userId) => {
 
     if (error) {
       console.error("Supabase error while listing files:", error.message);
-      throw new Error(`Failed to list files for bucket '${bucketName}': ${error.message}`);
+      throw new Error(
+        `Failed to list files for bucket '${bucketName}': ${error.message}`
+      );
     }
 
     return data;
   } catch (err) {
     console.error("Error during Supabase operation:", err.message);
-    throw new Error("Supabase operation failed. Check your Supabase configuration and schema.");
+    throw new Error(
+      "Supabase operation failed. Check your Supabase configuration and schema."
+    );
   }
 };
 

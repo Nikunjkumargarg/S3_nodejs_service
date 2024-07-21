@@ -4,6 +4,7 @@ const path = require("path");
 const app = express();
 const port = process.env.PORT || 3000;
 
+console.log(path.join(__dirname, "src", "data", "public_data"));
 // Import your routes
 const s3Routes = require("./src/routes/s3Routes");
 
@@ -13,10 +14,9 @@ app.use(express.urlencoded({ extended: true })); // For parsing application/x-ww
 
 // Serve static files (e.g., for front-end assets)
 app.use(
-  "/files",
+  "/public",
   express.static(path.join(__dirname, "src", "data", "public_data"))
 );
-
 // Use the s3 routes
 app.use("/api", s3Routes);
 
