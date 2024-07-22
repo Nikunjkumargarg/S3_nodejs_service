@@ -25,7 +25,7 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
 
   if (!token) return res.status(401).json({ error: "Auth token not found" }); // Unauthorized
-
+  console.log(ACCESS_TOKEN_SECRET);
   jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: "Invalid token" }); // Forbidden
     req.user = user;
@@ -40,6 +40,7 @@ async function login(req, res) {
     const user = await s3Service.validateUser(username, password);
     console.log(user);
     // Generate JWT
+    console.log(ACCESS_TOKEN_SECRET);
     const accessToken = jwt.sign(
       { username: user.username, userid: user.id },
       ACCESS_TOKEN_SECRET,

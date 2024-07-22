@@ -33,3 +33,9 @@ This project aims to showcase core functionalities of file management and integr
 
 Due to time constraints, only the most critical features have been implemented at this stage. Future updates may incorporate more comprehensive S3 functionalities to enhance the system's capabilities further.
 
+# Steps to run the project
+- fill credentials in .env file in the specified variables
+- npm install
+- npm run start
+
+
