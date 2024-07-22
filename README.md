@@ -1,7 +1,15 @@
 
-# S3 Bucket Clone NodeJs Service
+# Hi, I'm Nikunj Garg! 👋
 
-This project is a Node.js application that emulates the core functionalities of AWS S3. It allows you to perform CRUD (Create, Read, Update, Delete) operations on buckets and files.
+
+# About Project
+
+This project is a Node.js application that emulates the core functionalities of AWS S3. It allows user to perform CRUD (Create, Read, Update, Delete) operations on buckets and files.
+
+# API Reference
+## 🔗 Link
+https://nikunjs-organization-1.gitbook.io/documentation-s3-nodejs-service
+
 
 
 
@@ -14,66 +22,14 @@ This project is a Node.js application that emulates the core functionalities of 
 - Delete Files: Enables deletion of files from buckets.
 - List Buckets and Objects: Provides functionality to list all buckets and objects within a bucket.
 
-The application uses local filesystem storage to manage files and integrates a simple API to handle file operations, providing a scalable solution for file management in a development or testing environment.
+For more please refer the API documentation. Link is provided above.
+
+The application uses local filesystem storage to manage files and integrates a simple API to handle file operations.
 
 
-## API Reference
+## Many more features could be added, which S3 provides, but due to time limitations, I could only add whatever was possible.
 
-#### Sign Up
+This project aims to showcase core functionalities of file management and integration using S3-like capabilities. While the current implementation covers essential features such as public/private bucket management and file operations, it is important to note that many additional advanced features provided by S3 could be included in future iterations.
 
-```http
-  POST /api/register
-```
+Due to time constraints, only the most critical features have been implemented at this stage. Future updates may incorporate more comprehensive S3 functionalities to enhance the system's capabilities further.
 
-| Body | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `username` | `string` | **Required**. |
-| `password` | `string` | **Required**. |
-
-#### Log In
-
-```http
-  POST /api/login
-```
-
-| Body | Type     | Description                       |
-| :-------- | :------- | :-------------------------------- |
-| `username` | `string` | **Required**. |
-| `password` | `string` | **Required**. |
-
-#### Create Bucket
-
-```http
-  POST /api/buckets
-```
-
-| Body | Type     | Description                       |
-| :-------- | :------- | :-------------------------------- |
-| `bucketName` | `string` | **Required**. |
-| `isPrivate` | `boolean` |  |
-
-#### Upload Image
-
-```http
-  POST /api/buckets/<bucketName>/objects
-  POST /api/buckets/<bucketName>/objects/<filename>
-```
-
-| Parameter | Type     | Description                       |
-| :-------- | :------- | :-------------------------------- |
-| `filename` | `string` | for having custom file name. |
-| `bucketName` | `string` | **Required** |
-
-| Body | Type     | Description                       |
-| :-------- | :------- | :-------------------------------- |
-| `file` | `file` | **Required** |
-
-#### List images of Bucket
-
-```http
-  GET /api/buckets/pludous/objects
-```
-
-| Parameter | Type     | Description                       |
-| :-------- | :------- | :-------------------------------- |
-| `bucketName` | `string` | **Required**.|

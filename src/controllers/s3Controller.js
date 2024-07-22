@@ -1,4 +1,3 @@
-const { use } = require("../routes/s3Routes");
 const s3Service = require("../services/s3Service");
 const jwt = require("jsonwebtoken");
 
@@ -25,10 +24,10 @@ function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
 
-  if (!token) return res.sendStatus(401); // Unauthorized
+  if (!token) return res.status(401).json({ error: "Auth token not found" }); // Unauthorized
 
   jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
-    if (err) return res.sendStatus(403); // Forbidden
+    if (err) return res.status(403).json({ error: "Invalid token" }); // Forbidden
     req.user = user;
     console.log(user);
     next();
@@ -44,7 +43,7 @@ async function login(req, res) {
     const accessToken = jwt.sign(
       { username: user.username, userid: user.id },
       ACCESS_TOKEN_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "7d" }
     );
 
     const refreshToken = jwt.sign(
@@ -108,7 +107,7 @@ const createBucket = async (req, res) => {
 
 //Controller to get all Buckets
 const getAllBucketsForUserController = async (req, res) => {
-  const userId = req.params.userId;
+  const userId = req.user.userid;
 
   try {
     const buckets = await s3Service.getAllBucketsForUser(userId);
@@ -121,7 +120,7 @@ const getAllBucketsForUserController = async (req, res) => {
 //Controller to get bucket by name
 // Controller to handle the request to get a specific bucket by name
 const getBucketByNameController = async (req, res) => {
-  const userId = req.params.userId;
+  const userId = req.user.userid;
   const bucketName = req.params.bucketName;
 
   try {
@@ -187,7 +186,7 @@ const getFile = async (req, res) => {
     fileStream.pipe(res); // Stream the file to the response
   } catch (error) {
     console.error("Error retrieving file:", error.message);
-    res.status(500).json({
+    res.status(404).json({
       error: "Failed to retrieve file",
       message: error.message,
     });
@@ -197,9 +196,10 @@ const getFile = async (req, res) => {
 // Controller to delete a file
 const deleteFile = async (req, res) => {
   try {
+    console.log("delete file");
     const { bucketName, fileName } = req.params;
     const userId = req.user.userid;
-
+    console.log(bucketName, userId, fileName);
     if (!bucketName || !fileName) {
       return res
         .status(400)
@@ -248,10 +248,11 @@ const listFiles = async (req, res) => {
 // Route to change bucket privacy
 async function changeBucketPrivacy(req, res) {
   const { bucketName, newPrivacy } = req.body;
+  console.log(bucketName, newPrivacy);
   const userId = req.user.userid;
 
   try {
-    await s3Service.changeBucketPrivacy(bucketName, userId, newPrivacy);
+    await s3Service.updateBucketPrivacy(bucketName, userId, newPrivacy);
     res.status(200).json({
       success: true,
       message: `Bucket '${bucketName}' privacy updated successfully.`,

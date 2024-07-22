@@ -12,36 +12,39 @@ const {
   validateListFiles,
   validateChangeBucketPrivacy,
   handleValidationErrors,
-  validateLogin,
-  validateRegister,
-  validateRefreshToken,
   validateUserId,
   validateBucketName,
 } = require("../validationRules");
+
 // Route to create a bucket
 router.post(
-  "/buckets",
+  "/bucket",
   s3Controller.authenticateToken,
   validateCreateBucket,
   handleValidationErrors,
   s3Controller.createBucket
 );
-router.post(
-  "/register",
-  validateRegister,
-  handleValidationErrors,
-  s3Controller.register
+
+// Route to get all buckets for a user
+router.get(
+  "/bucket",
+  s3Controller.authenticateToken,
+  validateUserId,
+  s3Controller.getAllBucketsForUserController
 );
-router.post(
-  "/login",
-  validateLogin,
-  handleValidationErrors,
-  s3Controller.login
+
+// Route to get a specific bucket by name
+router.get(
+  "/bucket/:bucketName",
+  s3Controller.authenticateToken,
+  validateBucketName,
+  s3Controller.getBucketByNameController
 );
-router.post("/refreshtoken", validateRefreshToken, s3Controller.refreshToken);
+module.exports = router;
+
 // Route to upload a file to a specified bucket
 router.post(
-  "/buckets/:bucketName/objects/:fileName?",
+  "/bucket/:bucketName/objects/:fileName?",
   s3Controller.authenticateToken,
   validateFileUpload,
   handleValidationErrors,
@@ -51,7 +54,7 @@ router.post(
 
 // Route to get a file from a specified bucket
 router.get(
-  "/buckets/:bucketName/objects/:fileName",
+  "/bucket/:bucketName/objects/:fileName",
   s3Controller.authenticateToken,
   validateGetFile,
   handleValidationErrors,
@@ -60,7 +63,7 @@ router.get(
 
 // Route to delete a file from a specified bucket
 router.delete(
-  "/buckets/:bucketName/objects/:fileName",
+  "/bucket/:bucketName/objects/:fileName",
   s3Controller.authenticateToken,
   validateDeleteFile,
   handleValidationErrors,
@@ -69,7 +72,7 @@ router.delete(
 
 // Route to list files in a specified bucket
 router.get(
-  "/buckets/:bucketName/objects",
+  "/bucket/:bucketName/objects",
   s3Controller.authenticateToken,
   validateListFiles,
   handleValidationErrors,
@@ -77,26 +80,9 @@ router.get(
 );
 
 router.put(
-  "/changePrivacy",
+  "/bucket/changePrivacy",
   s3Controller.authenticateToken,
   validateChangeBucketPrivacy,
   handleValidationErrors,
   s3Controller.changeBucketPrivacy
 );
-
-// Route to get all buckets for a user
-router.get(
-  "/buckets/:userId",
-  s3Controller.authenticateToken,
-  validateUserId,
-  s3Controller.getAllBucketsForUserController
-);
-
-// Route to get a specific bucket by name
-router.get(
-  "/buckets/:userId/:bucketName",
-  s3Controller.authenticateToken,
-  validateBucketName,
-  s3Controller.getBucketByNameController
-);
-module.exports = router;

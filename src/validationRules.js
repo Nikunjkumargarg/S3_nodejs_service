@@ -29,7 +29,10 @@ const validateCreateBucket = [
     .withMessage("Bucket name is required.")
     .isLength({ min: 3, max: 50 })
     .withMessage("Bucket name must be between 3 and 50 characters."),
-  body("isPrivate").isBoolean().withMessage("Privacy must be a boolean value."),
+  body("isPrivate")
+    .notEmpty()
+    .isBoolean()
+    .withMessage("Privacy must be a boolean value."),
 ];
 
 // Validation rules for file operations
